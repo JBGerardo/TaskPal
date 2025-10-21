@@ -1,8 +1,6 @@
-// backend/controllers/userController.js
-
 import { sql } from "../config/db.js";
 import bcrypt from "bcrypt";
-import { sendOTP } from "../config/mailer.js"; // we'll make this helper
+import { sendOTP } from "../config/mailer.js"; 
 import jwt from "jsonwebtoken";
 
 
@@ -38,48 +36,66 @@ export const getUser = async (req, res) => {
 };
 
 export const updateUsers = async (req, res) => {
+  const { id } = req.params;
+  const {
+    first_name,
+    last_name,
+    email,
+    unit_no,
+    street,
+    city,
+    province,
+    postal_code,
+    password, 
+  } = req.body;
+
   try {
-    const { id } = req.params;
-    const {
-      first_name,
-      last_name,
-      email,
-      unit_no,
-      street,
-      city,
-      province,
-      postal_code,
-    } = req.body;
+    // 1️ Fetch current user
+    const existingUser = await sql`SELECT * FROM users WHERE id = ${id}`;
+    if (existingUser.length === 0) {
+      return res.status(404).json({ error: "User not found" });
+    }
 
-    console.log("Updating user:", id, req.body);
+    const user = existingUser[0];
 
-    const updated = await sql`
+    // 2️ If email is being changed, verify password
+    if (email && email !== user.email) {
+      if (!password) {
+        return res.status(400).json({
+          error: "Password is required to confirm email change.",
+        });
+      }
+
+      const passwordMatch = await bcrypt.compare(password, user.password);
+      if (!passwordMatch) {
+        return res.status(401).json({
+          error: "Incorrect password. Email update denied.",
+        });
+      }
+    }
+
+    // 3️ Proceed with the update
+    const updatedUser = await sql`
       UPDATE users
-      SET
-        first_name = ${first_name},
-        last_name = ${last_name},
-        email = ${email},
-        unit_no = ${unit_no},
-        street = ${street},
-        city = ${city},
-        province = ${province},
-        postal_code = ${postal_code}
+      SET first_name = ${first_name},
+          last_name = ${last_name},
+          email = ${email},
+          unit_no = ${unit_no},
+          street = ${street},
+          city = ${city},
+          province = ${province},
+          postal_code = ${postal_code}
       WHERE id = ${id}
       RETURNING *;
     `;
 
-    if (updated.length === 0) {
-      return res
-        .status(404)
-        .json({ success: false, error: "User not found" });
-    }
-
-    res.json({ success: true, data: updated[0] });
+    return res.status(200).json({
+      success: true,
+      data: updatedUser[0],
+    });
   } catch (err) {
     console.error("Error updating user:", err);
-    res
-      .status(500)
-      .json({ success: false, error: "Failed to update user" });
+    res.status(500).json({ error: "Server error updating user profile" });
   }
 };
 
